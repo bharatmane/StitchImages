@@ -14,6 +14,7 @@ namespace ImageStitch
    
     public partial class Form1 : Form
     {
+        MySettings mySettings = null;
         int fullImageWidth = 0;
         int fullImageHeight = 0;
         public Form1()
@@ -23,47 +24,83 @@ namespace ImageStitch
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            
-            
+            mySettings = new MySettings();
+            txtRootFolderPath.Text = mySettings.RootFolder;
+            if (Directory.Exists(mySettings.RootFolder))
+            {
+                _LoadDirectories(mySettings.RootFolder);
+            }
         }
 
         private void btnBrowse_Click(object sender, EventArgs e)
         {
             using (var fbd = new FolderBrowserDialog())
             {
-                
+                fbd.SelectedPath = mySettings.LastKnownFolder;
                 DialogResult result = fbd.ShowDialog();
 
                 if (result == DialogResult.OK && !string.IsNullOrWhiteSpace(fbd.SelectedPath))
                 {
+                    mySettings.LastKnownFolder = fbd.SelectedPath;
+                    mySettings.Save();
                     txtFolder.Text = fbd.SelectedPath;
-                    string[] files = Directory.GetFiles(fbd.SelectedPath);
-
-                    lstImages.DataSource = files;
+                    
                 }
             }
         }
 
         private void btnStitch_Click(object sender, EventArgs e)
         {
+            _StartStitching();
+        }
+
+        private void _StartStitching()
+        {
             List<int> columns;
             List<int> rows;
             int finalImageHeight = 0;
-            int finalImageWidth= 0;
+            int finalImageWidth = 0;
             columns = _GetNumberOfColumns().ToList();
             rows = _GetNumberOfRows().ToList();
             columns.Sort();
             rows.Sort();
-            finalImageHeight = _GetFinalImageHeight(rows,columns);
+            finalImageHeight = _GetFinalImageHeight(rows, columns);
             finalImageWidth = _GetFinalImageWidth(rows, columns);
+            pbImageStitching.Minimum = 0;
+            pbImageStitching.Maximum = rows.Count * columns.Count;
+            pbImageStitching.Value = 0;
 
-            string finalImagePath = txtFolder.Text + @"\StitchedImage.jpg";
-            Bitmap finalImage = _StitchImages(rows,columns,finalImageHeight,finalImageWidth);
-            finalImage.Save(finalImagePath);
-            finalImage.Dispose();
-            pictureBox1.Image = Image.FromFile(finalImagePath);
+            string finalImagePath = txtFinalFolderLocation.Text + @"\" + txtFolder.Text.Substring(txtFolder.Text.LastIndexOf('\\')) + ".jpg";
+            bool dirError = false;
+            if (Directory.Exists(txtFinalFolderLocation.Text) == false)
+            {
+                try
+                {
+                    Directory.CreateDirectory(txtFinalFolderLocation.Text);
+                }
+                catch (Exception ex)
+                {
+                    dirError = true;
+                    MessageBox.Show("Invalid final image folder location \n " + ex.ToString());
+                    txtFinalFolderLocation.Focus();
+                }
+            }
+            if (dirError == false)
+            {
+                try
+                {
+                    Bitmap finalImage = _StitchImages(rows, columns, finalImageHeight, finalImageWidth);
+                    finalImage.Save(finalImagePath);
+                    finalImage.Dispose();
+                    pictureBox1.Image = Image.FromFile(finalImagePath);
+                }
+                catch (Exception ex)
+                {
+                    dirError = true;
+                    MessageBox.Show("Error While stichting images +\n " + ex.ToString());
+                }
+            }
         }
-
         private Bitmap _StitchImages(IEnumerable<int> rows, IEnumerable<int> columns, int finalImageHeight, int finalImageWidth)
         {
             Bitmap finalImage = null;
@@ -90,6 +127,7 @@ namespace ImageStitch
                                 maxColumnHeight = Math.Max(maxColumnHeight, image.Height);
                                 image.Dispose();
                             }
+                            pbImageStitching.Value += 1;
                         }
                         offsetTop += maxColumnHeight;
                     }
@@ -178,8 +216,74 @@ namespace ImageStitch
             }
             return indexes.Distinct();
         }
+        public static String[] GetFilesFrom(String searchFolder, String[] filters, bool isRecursive)
+        {
+            List<String> filesFound = new List<String>();
+            var searchOption = isRecursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            foreach (var filter in filters)
+            {
+                filesFound.AddRange(Directory.GetFiles(searchFolder, String.Format("*.{0}", filter), searchOption));
+            }
+            return filesFound.ToArray();
+        }
+        private void button1_Click(object sender, EventArgs e)
+        {
+            using (var fbd = new FolderBrowserDialog())
+            {
 
+                fbd.SelectedPath = mySettings.RootFolder;
+                DialogResult result = fbd.ShowDialog();
 
+                if (result == DialogResult.OK && !string.IsNullOrWhiteSpace(fbd.SelectedPath))
+                {
+
+                    mySettings.RootFolder = fbd.SelectedPath;
+                    mySettings.Save();
+
+                    txtRootFolderPath.Text = fbd.SelectedPath;
+                    _LoadDirectories(fbd.SelectedPath);
+                }
+            }
+            
+        }
+
+        private void _LoadDirectories(string selectedPath)
+        {
+            string[] directories = Directory.GetDirectories(txtRootFolderPath.Text);
+            lstFolders.DataSource = directories;
+           
+
+        }
+
+        private void lstFolders_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            txtFolder.Text = lstFolders.SelectedItem.ToString();
+            _LoadImageFiles(lstFolders.SelectedItem.ToString());
+            
+        }
+
+        private void _LoadImageFiles(string selectedPath)
+        {
+            var filters = new String[] { "jpg", "jpeg", "png", "gif", "tiff", "bmp", "svg" };
+            string[] files = GetFilesFrom(selectedPath, filters,false);
+            lstImages.DataSource = files;
+        }
+
+        private void btnAllFOlders_Click(object sender, EventArgs e)
+        {
+            string[] folders = lstFolders.Items.OfType<string>().ToArray();
+            foreach (var item in folders)
+            {
+                lstFolders.SelectedItem = item;
+                _StartStitching();
+            }
+        }
+
+        private void txtFinalFolderLocation_TextChanged(object sender, EventArgs e)
+        {
+            mySettings.FinalImageFolderLocation = txtFinalFolderLocation.Text;
+            mySettings.Save();
+        }
 
 
         //private void CombineImages(MyImage[,] images)
